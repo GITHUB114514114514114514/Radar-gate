@@ -1,0 +1,39 @@
+#include <STC8G.H>																																//头文件
+#include "intrins.H"
+sbit key=P1^0;																																		//将P10 IO口定义为开关
+unsigned char i=0;																																//定义变量i
+unsigned char x=0;																																//定义变量x
+unsigned char speak[7]={0x7E,0x13,0x00,0x02,0x00,0x01,0xEF};											//定义数组speak，发送播放第一段的指令		
+void Delay1ms(unsigned int ms)    //@22.1184MHz								
+{
+        unsigned char data i, j;
+    while(ms--)
+    {
+        i = 29;
+        j = 183;
+        do
+        {
+            while (--j);
+        } while (--i);
+    }
+}
+void main()
+{
+		P1M0=0x00;P1M1=0x00; 
+		P3M0=0x00;P3M1=0x00; 
+		P5M0=0x00;P5M1=0x00; 
+		while(1)
+		{
+				if(key==0)																																//如果按下开关执行括号里的程序
+				{																																				
+						while(key==0);																												//等待开关抬起，执行下面程序
+						for(i=0;i<7;i++)																											//for语句循环7遍
+						{
+								P_SW1=0X80;																												//将TR设在语音芯片的脚上
+								SBUF=speak[i];																										//发送第i位数据
+								while(TI);																												//等待TI置1
+								Delay1ms(2);																											//等待2毫秒（避免乱接）
+						}
+				}
+		}
+}

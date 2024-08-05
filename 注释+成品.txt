@@ -1,0 +1,171 @@
+#include <STC8G.H>																																																								//头文件
+#include "intrins.H"
+unsigned char xdata num=0;																																																				//定义变量num
+unsigned char xdata x=0;																																																					//定义变量x
+unsigned char xdata sendnum[60];																																																	//定义数组sendnum
+unsigned char xdata sendnum1[30];																																																	//定义数组sendnum1
+unsigned char xdata temp_sendnum1[30];																																														//定义数组temp_sendnum1
+unsigned char xdata speak1[7]={0x7E,0x13,0x00,0x02,0x00,0x01,0xEF};																																//定义数组speak1
+unsigned char xdata speak2[7]={0x7E,0x13,0x00,0x02,0x00,0x02,0xEF};																																//定义数组speak1
+unsigned char xdata speak3[7]={0x7E,0x13,0x00,0x02,0x00,0x03,0xEF};																																//定义数组speak1
+unsigned char xdata speak4[7]={0x7E,0x13,0x00,0x02,0x00,0x04,0xEF};																																//定义数组speak1
+unsigned char xdata speak5[7]={0x7E,0x13,0x00,0x02,0x00,0x05,0xEF};																																//定义数组speak1
+void Uart1_Init(void)	//9600bps@22.1184MHz
+{
+	SCON = 0x50;																																																										//8位数据,可变波特率
+	AUXR |= 0x40;																																																										//定时器时钟1T模式
+	AUXR &= 0xFE;																																																										//串口1选择定时器1为波特率发生器		
+	TMOD &= 0x0F;																																																										//设置定时器模式
+	TL1 = 0xC0;																																																											//设置定时初始值
+	TH1 = 0xFD;																																																											//设置定时初始值		
+	ET1 = 0;																																																												//禁止定时器中断		
+	TR1 = 1;																																																												//定时器1开始计时	
+	EA=1;																																																														//打开中断总开关
+	ES=1;																																																														//打开串口中断开关
+}
+
+void Delay1ms(unsigned int ms)	//@22.1184MHz	
+{
+		unsigned char data i, j;
+	while(ms--)
+	{
+		i = 29;
+		j = 183;	
+		do
+		{
+			while (--j);
+		} while (--i);
+	}
+}
+
+
+void check()																																																											//子程序
+{
+	unsigned char i, a, b;
+    for(i=0;i<60;i++)																																																							//在雷达发来的60个数据中有30个数据是正确的
+    {																																																															/*由帧头来找到这30个数据，并将其存入数组
+																																																																	sendnum1*/
+        if((sendnum[i]==0xaa)&(sendnum[i+1]==0xff)&(sendnum[i+2]==0x03)&(sendnum[i+3]==0x00)&(sendnum[i+28]==0x55)&(sendnum[i+29]==0xcc))
+				{	
+						a = i;
+						for(b=0;b<30;b++)
+						{
+								sendnum1[b]=sendnum[(b+a)];
+						}
+				}
+				if(x==1)
+				{
+						sendnum1[8]=0x00;
+						sendnum1[9]=0x00;
+						x=0;
+				}
+    }
+    
+}
+
+void main()
+{
+    P1M0=0X00;    P1M1=0X00;
+    P3M0=0X00;    P3M1=0X00;
+    P5M0=0X00;    P5M1=0X00;
+    Uart1_Init();																																																									//开启串口中断
+    while(1)																																																											//让以上的开启串口程序只执行一次
+    {		
+				unsigned char i;																																																					//定义只能在主程序里使用的变量i
+        check();																																																									//开启接收，跳转中断子程序，将sendnum中的60为数据
+																																																																	/*挑选后存入sendnum1*/
+				P_SW1=0x40;																																																									
+        REN=1;
+        Delay1ms(100);
+        REN=0;
+				for(i=0;i<30;i++)																																																					//将正确的数据发入电脑
+				{
+						P_SW1=0X00;
+						SBUF=sendnum1[i];
+						while(TI);
+						Delay1ms(2);
+				}
+				if((sendnum1[8]!=0x00)|(sendnum1[9]!=0x00))																																								//如果雷达检测有速度执行下面程序											
+				{
+						for(i=0;i<30;i++)																																																			//将sendnum1的数据录入temp_sendnum1
+						{
+								temp_sendnum1[i]=sendnum1[i];								               
+						}
+						sendnum1[6]=sendnum1[6]>>7;																																														//将sendnum1第六位右移7位，因为遗失位会补零
+																																																																	/*所以剩下的只有可能是0x00或0x01*/
+						if(sendnum1[8]<=0x60)																																																	//如果速度小于等于某一值，能么人体就不在跑动
+																																																																	/*就执行括号里的程序*/
+						{
+							if((sendnum1[5]>=0x80)&(sendnum1[7]>=0x82))																																					//当xy轴是一个特定数值，就给语音芯片发送播放																			
+								{																																																									/*第五段的命令 语音：请勿上楼*/	
+										for(i=0;i<7;i++)
+										{
+												P_SW1=0X80;
+												SBUF=speak5[i];
+												while(TI);
+												Delay1ms(2);
+										}
+										x++;																																																								
+								}
+						
+								if(sendnum1[6]==0x00)																																															//当有速度，且y轴为负数，说明有人出门，就给
+									{																																																								/*语音芯片发送播放第二段语音的命令 语音：再见*/
+										for(i=0;i<7;i++)
+										{
+												P_SW1=0X80;
+												SBUF=speak2[i];
+												while(TI);
+												Delay1ms(2);
+										}
+										x++;
+								}
+								if(sendnum1[6]==0x01)																																															//当有速度，且y轴为正数，说明有人进门，就给
+								{																																																									/*语音芯片发送播放第一段语音的命令*/
+										for(i=0;i<7;i++)																																															/*语音：欢迎光临*/
+										{
+												P_SW1=0X80;
+												SBUF=speak1[i];
+												while(TI);
+												Delay1ms(2);
+										}
+										x++;
+								}	
+								
+						}		
+						if(sendnum1[8]>0x60)																																																	//当速度大于某一值，说明有人奔跑，就给语音芯片      
+							{																																																										/*发送播放第三段语音的命令 语音：请勿奔跑*/
+								for(i=0;i<7;i++)
+								{
+										P_SW1=0X80;
+										SBUF=speak3[i];
+										while(TI);
+										Delay1ms(2);
+								}
+								x++;
+						}
+				}
+				sendnum1[6]=temp_sendnum1[6];																																															//将右移7位的sendnum1第6位归位																																			
+    }                                                  
+}
+
+void zhr() interrupt 4																																																						//中断跳转子程序
+{
+    unsigned char tem;																																																						//定义变量tem
+    tem=SBUF;																																																											//将tem赋值SBUF
+    if(RI)																																																												//如果RI=1（每次接收RI都会置1）将雷达发来的
+    {    																																																													/*随机60位数据录入sendnum并将RI置0（为下次接收*/
+        P_SW1=0x40;																																																								/*做准备）*/
+        sendnum[num]=SBUF;
+        num++;
+        if(num>59)																																																								//下次接收时将sendnum和num清零（为下次接收做
+        {																																																													/*准备）*/
+            num=0;
+            sendnum[num]=0x00;                                                        
+        }
+        RI=0;
+    }    
+    if(TI)																																																												//如果TI=1（每次发送TI都会置1），将TI置0（为下次
+			{																																																														/*发送做准备）*/
+        TI=0;
+    }
+}
